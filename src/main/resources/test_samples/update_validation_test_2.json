@@ -1,0 +1,40 @@
+{
+    "data": [
+        {
+            "username": "thangtd",
+            "is_allowed": true,
+            "agent": ["1", "2"],
+            "field": ["1", "2"]
+        },
+        {
+            "username": "chiennd",
+            "is_allowed": true,
+            "agent": ["1"],
+            "field": ["1"],
+            "locationPermission": {
+                "level": "nation",
+                "value": "" 
+            }
+        },
+        {
+            "username": "",  
+            "is_allowed": true,
+            "agent": ["1"],
+            "field": ["1"],
+            "locationPermission": {
+                "level": "area",
+                "value": "North"
+            }
+        },
+        {
+            "username": "phuongdm",
+            "is_allowed": true,
+            "agent": null,  
+            "field": ["1"],
+            "locationPermission": {
+                "level": "province",
+                "value": "Hanoi"
+            }
+        }
+    ]
+} 

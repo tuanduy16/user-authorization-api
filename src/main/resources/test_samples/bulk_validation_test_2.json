@@ -1,0 +1,32 @@
+{
+    "data": [
+        {
+            "employee_id": "011351",
+            "fullname": "",
+            "department": "Thủ trưởng đơn vị - Ban Giám đốc Tập đoàn - Khối cơ quan Tập đoàn",
+            "position": "Chủ tịch",
+            "email": "thangtd@viettel.com.vn",
+            "phone_number": "invalid-phone",
+            "birth_year": "1973"
+        },
+        {
+            "employee_id": "",
+            "fullname": "Nguyễn Đình Chiến",
+            "department": "Thủ trưởng đơn vị - Ban Giám đốc Tập đoàn - Khối cơ quan Tập đoàn",
+            "position": "Phó Tổng giám đốc",
+            "email": "chiennd@viettel.com.vn",
+            "phone_number": "0988011988",
+            "birth_year": "1969"
+        },
+        {
+            "employee_id": "001834",
+            "fullname": "Đỗ Minh Phương",
+            "department": null,
+            "position": "",
+            "email": "phuongdm@viettel.com.vn",
+            "phone_number": "0983418618",
+            "birth_year": "1969"
+        }
+    ],
+    "deleteNonExistPeople": false
+} 

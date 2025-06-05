@@ -1,0 +1,59 @@
+{
+    "data": [
+        {
+            "employee_id": "074728",
+            "fullname": "Lê Thanh Hiền",
+            "department": "Ban Giám đốc Tập đoàn - Khối cơ quan Tập đoàn",
+            "position": "Phó Tổng giám đốc",
+            "email": "hienlt11@viettel.com.vn",
+            "phone_number": "0975257979",
+            "birth_year": "1985"
+        },
+        {
+            "employee_id": "011351",
+            "fullname": "Tào Đức Thắng",
+            "department": "Thủ trưởng đơn vị - Ban Giám đốc Tập đoàn - Khối cơ quan Tập đoàn",
+            "position": "Chủ tịch",
+            "email": "thangtd@viettel.com.vn",
+            "phone_number": "0988011988",
+            "birth_year": "1973"
+        },
+        {
+            "employee_id": "001986",
+            "fullname": "Nguyễn Đình Chiến",
+            "department": "Thủ trưởng đơn vị - Ban Giám đốc Tập đoàn - Khối cơ quan Tập đoàn",
+            "position": "Phó Tổng giám đốc",
+            "email": "chiennd@viettel.com.vn",
+            "phone_number": "0382838383",
+            "birth_year": "1969"
+        },
+        {
+            "employee_id": "001834",
+            "fullname": "Đỗ Minh Phương",
+            "department": "Thủ trưởng đơn vị - Ban Giám đốc Tập đoàn - Khối cơ quan Tập đoàn",
+            "position": "Phó Tổng giám đốc",
+            "email": "phuongdm@viettel.com.vn",
+            "phone_number": "0983418618",
+            "birth_year": "1969"
+        },
+        {
+            "employee_id": "019917",
+            "fullname": "Đào Xuân Vũ",
+            "department": "Thủ trưởng đơn vị - Ban Giám đốc Tập đoàn - Khối cơ quan Tập đoàn",
+            "position": "Phó Tổng Giám đốc",
+            "email": "vudx@viettel.com.vn",
+            "phone_number": "0983000559",
+            "birth_year": "1976"
+        },
+        {
+            "employee_id": "014650",
+            "fullname": "Cao Anh Sơn",
+            "department": "Thủ trưởng đơn vị - Ban Giám đốc Tập đoàn - Khối cơ quan Tập đoàn",
+            "position": "Phó Tổng giám đốc",
+            "email": "sonca@viettel.com.vn",
+            "phone_number": "0983000088",
+            "birth_year": "1975"
+        }
+    ],
+    "deleteNonExistPeople": false
+}

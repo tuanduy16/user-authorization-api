@@ -1,0 +1,21 @@
+{
+    "data": [
+        {
+            "username": "hienlt11",
+            "is_allowed": true,
+            "agent": ["1", "2", "3"],
+            "field": ["1", "2", "3"],
+            "location_permission": {
+                "level": "main_station",
+                "value": "GM"
+            }
+        },
+        {
+            "username": "thangtd",
+            "is_allowed": false,
+            "agent": [],
+            "field": [],
+            "location_permission": null
+        }
+    ]
+} 

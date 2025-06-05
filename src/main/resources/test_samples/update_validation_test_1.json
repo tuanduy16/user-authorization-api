@@ -1,0 +1,34 @@
+{
+    "data": [
+        {
+            "username": "thangtd",
+            "is_allowed": true,
+            "agent": ["999", "1000"],  
+            "field": ["1", "2"],
+            "locationPermission": {
+                "level": "invalid_level",  
+                "value": "Vietnam"
+            }
+        },
+        {
+            "username": "chiennd",
+            "is_allowed": true,
+            "agent": ["1"],
+            "field": ["999"],  
+            "location_permission": {
+                "level": "area",
+                "value": null 
+            }
+        },
+        {
+            "username": "non_existent_user",  
+            "is_allowed": true,
+            "agent": ["1"],
+            "field": ["1"],
+            "location_permission": {
+                "level": "province",
+                "value": "Hanoi"
+            }
+        }
+    ]
+} 

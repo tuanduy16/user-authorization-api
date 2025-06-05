@@ -1,0 +1,51 @@
+{
+    "data": [
+        {
+            "username": "thangtd",
+            "is_allowed": true,
+            "agent": ["1", "2"],
+            "field": ["1", "2"],
+            "location_permission": {
+                "level": "nation",
+                "value": "VN"
+            }
+        },
+        {
+            "username": "chiennd",
+            "is_allowed": true,
+            "agent": ["1"],
+            "field": ["1"],
+            "location_permission": {
+                "level": "area",
+                "value": "KV2"
+            }
+        },
+        {
+            "username": "phuongdm",
+            "is_allowed": false,
+            "agent": [],
+            "field": [],
+            "location_permission": null
+        },
+        {
+            "username": "vudx",
+            "is_allowed": true,
+            "agent": ["2"],
+            "field": ["2"],
+            "location_permission": {
+                "level": "province",
+                "value": "HNI"
+            }
+        },
+        {
+            "username": "sonca",
+            "is_allowed": true,
+            "agent": ["1", "2"],
+            "field": ["1", "2"],
+            "location_permission": {
+                "level": "district",
+                "value": "D500001"
+            }
+        }
+    ]
+} 
