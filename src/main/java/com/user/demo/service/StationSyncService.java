@@ -9,7 +9,9 @@ import com.user.demo.repository.StationRepository;
 import com.user.demo.repository.LocationPermissionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class StationSyncService {
@@ -20,27 +22,70 @@ public class StationSyncService {
 
     /**
      * Sync station data from external source and update user default stations.
+     * Uses batch operations to minimize database calls.
      */
+    @Transactional
     public void syncStations() {
         Map<String, Object> stationData = fetchStationsData();
         List<Map<String, Object>> dataList = (List<Map<String, Object>>) stationData.get("data");
         if (dataList == null) return;
+
+        // Extract all station codes and usernames
+        Set<String> stationCodes = dataList.stream()
+            .map(record -> (String) record.get("STATION_CODE"))
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+
+        Set<String> usernames = dataList.stream()
+            .map(record -> {
+                String email = (String) record.get("EMAIL");
+                return email != null ? email.split("@")[0] : null;
+            })
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+
+        // Get existing stations in one query
+        Set<String> existingStations = stationRepository.findAllById(stationCodes)
+            .stream()
+            .map(Station::getCode)
+            .collect(Collectors.toSet());
+
+        // Create new stations in batch
+        List<Station> newStations = stationCodes.stream()
+            .filter(code -> !existingStations.contains(code))
+            .map(code -> {
+                Station station = new Station();
+                station.setCode(code);
+                return station;
+            })
+            .collect(Collectors.toList());
+
+        if (!newStations.isEmpty()) {
+            stationRepository.saveAll(newStations);
+        }
+
+        // Get all location permissions in one query
+        Map<String, LocationPermission> locationPermissions = locationPermissionRepository.findAllById(usernames)
+            .stream()
+            .collect(Collectors.toMap(LocationPermission::getUsername, lp -> lp));
+
+        // Update location permissions in batch
+        List<LocationPermission> updatedPermissions = new ArrayList<>();
         for (Map<String, Object> record : dataList) {
             String stationCode = (String) record.get("STATION_CODE");
             String email = (String) record.get("EMAIL");
             if (stationCode == null || email == null) continue;
-            // Insert station if not exists
-            if (!stationRepository.existsById(stationCode)) {
-                Station station = new Station();
-                station.setCode(stationCode);
-                stationRepository.save(station);
-            }
-            // Update stationDefault for user
+
             String username = email.split("@")[0];
-            locationPermissionRepository.findById(username).ifPresent(lp -> {
+            LocationPermission lp = locationPermissions.get(username);
+            if (lp != null) {
                 lp.setStationDefault(stationCode);
-                locationPermissionRepository.save(lp);
-            });
+                updatedPermissions.add(lp);
+            }
+        }
+
+        if (!updatedPermissions.isEmpty()) {
+            locationPermissionRepository.saveAll(updatedPermissions);
         }
     }
 

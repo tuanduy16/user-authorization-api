@@ -1,6 +1,6 @@
 package com.user.demo.model;
 
-import jakarta.persistence.*;
+import javax.persistence.*;
 import java.time.LocalDateTime;
 import lombok.Data;
 
@@ -13,13 +13,15 @@ public class User {
     private String username; // Username (primary key)
     private String email; // User email
     private String employeeId; // Employee ID
-    private String fullName; // Full name
+    private String fullname; // Full name
     private String phoneNumber; // Phone number
     private String birthYear; // Birth year
     private String position; // Position
     private String department; // Department
-    private String agentPermission; // Agent permissions (comma-separated)
-    private String fieldPermission; // Field permissions (comma-separated)
     private Boolean isAllowed; // Whether the user is allowed
+    private String agentPermission;
+    private String fieldPermission;
     private LocalDateTime approvedAt; // Approval timestamp
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
+    private LocationPermission locationPermission;
 } 

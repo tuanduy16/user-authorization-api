@@ -10,7 +10,7 @@ API dựa trên Spring Boot để quản lý nhân viên/người dùng với c�
 - Đồng bộ hóa dữ liệu trạm
 
 ### Công Nghệ Sử Dụng
-- Java 17
+- Java 8
 - Spring Boot 3.2.3
 - MySQL 8.0
 - Maven

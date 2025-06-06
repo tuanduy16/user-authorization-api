@@ -1,6 +1,6 @@
 package com.user.demo.model;
 
-import jakarta.persistence.*;
+import javax.persistence.*;
 import lombok.Data;
 
 @Entity
@@ -11,5 +11,8 @@ public class Province {
     private String code; // Province code (primary key)
     private String name; // Province name
     private String type; // Province type (tỉnh, thành phố)
-    private String areaCode; // Area code (foreign key)
+    
+    @ManyToOne
+    @JoinColumn(name = "area_code")
+    private Area area; // Area reference
 } 

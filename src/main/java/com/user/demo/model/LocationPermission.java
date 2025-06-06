@@ -1,6 +1,6 @@
 package com.user.demo.model;
 
-import jakarta.persistence.*;
+import javax.persistence.*;
 import lombok.Data;
 
 @Data
@@ -8,7 +8,14 @@ import lombok.Data;
 @Table(name = "location_permissions")
 public class LocationPermission {
     @Id
-    private String username; // Username (primary key, links to User)
+    @Column(name = "username")
+    private String username;
+
+    @OneToOne
+    @MapsId
+    @JoinColumn(name = "username")
+    private User user;
+
     private String nation; // Nation code
     private String area; // Area code
     private String province; // Province code
