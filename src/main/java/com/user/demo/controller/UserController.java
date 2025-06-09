@@ -24,6 +24,7 @@ public class UserController {
 
     @PostMapping("/bulk")
     public ResponseEntity<?> upsertUsers(@RequestBody UserBulkRequest request) {
+        // Đoạn này try catch có vẻ không cần, có global exception handler rồi mà
         try {
             log.info("Received bulk request: {}", request);
             userService.upsertUsers(request);

@@ -29,4 +29,4 @@ public class GlobalExceptionHandler {
         response.put("message", "An unexpected error occurred");
         return ResponseEntity.internalServerError().body(response);
     }
-} 
+}
