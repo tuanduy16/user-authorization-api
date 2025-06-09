@@ -22,6 +22,7 @@ import com.user.demo.repository.StationRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -67,30 +68,65 @@ public class UserService {
      * Bulk create or update users, and optionally delete non-existent users.
      */
     @Transactional
+    @CacheEvict(value = {"users", "permissions"}, allEntries = true)
     public void upsertUsers(UserBulkRequest request) {
         log.info("Starting bulk user upsert with request: {}", request);
-        List<UserRequest> userRequests = request.getData();
-        Set<String> usernamesInRequest = new HashSet<>();
+        
+        // Extract and validate all usernames first
+        Map<String, UserRequest> validUserRequests = extractValidUserRequests(request.getData());
+        if (validUserRequests.isEmpty()) {
+            log.warn("No valid user requests found");
+            return;
+        }
 
-        // First, process all updates and creates
-        for (UserRequest userReq : userRequests) {
-            log.info("Processing user request: {}", userReq);
+        // Create all users in memory
+        List<User> usersToSave = createUsersFromRequests(validUserRequests);
+        
+        // Save all users in one batch
+        if (!usersToSave.isEmpty()) {
+            userRepository.saveAll(usersToSave);
+            log.info("Saved {} users in batch", usersToSave.size());
+        }
+
+        // Handle deletions if requested
+        if (request.isDeleteNonExistPeople()) {
+            handleUserDeletions(validUserRequests.keySet());
+        }
+        
+        log.info("Bulk user upsert completed successfully");
+    }
+
+    private Map<String, UserRequest> extractValidUserRequests(List<UserRequest> requests) {
+        Map<String, UserRequest> validRequests = new HashMap<>();
+        
+        for (UserRequest userReq : requests) {
             if (userReq.getEmail() == null || userReq.getEmail().trim().isEmpty()) {
                 log.warn("Skipping user with null or empty email");
                 continue;
             }
+            
             Optional<String> usernameOpt = extractUsernameFromEmail(userReq.getEmail());
             if (usernameOpt.isEmpty()) {
                 log.warn("Skipping user with invalid email: {}", userReq.getEmail());
                 continue;
             }
+            
             String username = usernameOpt.get();
-            log.info("Generated username: {}", username);
-            usernamesInRequest.add(username);
+            validRequests.put(username, userReq);
+        }
+        
+        return validRequests;
+    }
+
+    private List<User> createUsersFromRequests(Map<String, UserRequest> validRequests) {
+        List<User> users = new ArrayList<>();
+        
+        for (Map.Entry<String, UserRequest> entry : validRequests.entrySet()) {
+            String username = entry.getKey();
+            UserRequest userReq = entry.getValue();
             
             try {
-                User user = userRepository.findById(username).orElseGet(User::new);
-                log.info("Found existing user: {}", user);
+                User user = new User();
                 user.setUsername(username);
                 user.setEmail(userReq.getEmail());
                 user.setEmployeeId(userReq.getEmployeeId());
@@ -103,41 +139,37 @@ public class UserService {
                 user.setAgentPermission("");
                 user.setFieldPermission("");
 
-                // Create or update location permission
-                LocationPermission locationPermission = user.getLocationPermission();
-                if (locationPermission == null) {
-                    locationPermission = new LocationPermission();
-                    locationPermission.setUsername(username);
-                    locationPermission.setUser(user);
-                    user.setLocationPermission(locationPermission);
-                }
+                // Create location permission
+                LocationPermission locationPermission = new LocationPermission();
+                locationPermission.setUsername(username);
+                locationPermission.setUser(user);
+                user.setLocationPermission(locationPermission);
 
-                userRepository.save(user);
-                log.info("Saved user with location permission: {}", user);
+                users.add(user);
             } catch (Exception e) {
-                log.error("Error processing user {}: {}", username, e.getMessage(), e);
-                throw new BusinessException("PROCESSING_ERROR", "Error processing user " + username + ": " + e.getMessage());
+                log.error("Error creating user {}: {}", username, e.getMessage(), e);
+                throw new BusinessException("PROCESSING_ERROR", "Error creating user " + username + ": " + e.getMessage());
             }
         }
+        
+        return users;
+    }
 
-        // Then, handle deletions if requested
-        if (request.isDeleteNonExistPeople()) {
-            log.info("Handling deletion of non-existent users");
-            try {
-                List<User> usersToDelete = userRepository.findAll().stream()
-                    .filter(user -> !usernamesInRequest.contains(user.getUsername()))
-                    .collect(Collectors.toList());
+    private void handleUserDeletions(Set<String> validUsernames) {
+        log.info("Handling deletion of non-existent users");
+        try {
+            List<User> usersToDelete = userRepository.findAll().stream()
+                .filter(user -> !validUsernames.contains(user.getUsername()))
+                .collect(Collectors.toList());
 
-                if (!usersToDelete.isEmpty()) {
-                    userRepository.deleteAll(usersToDelete);
-                    log.info("Deleted {} users and their permissions in batch", usersToDelete.size());
-                }
-            } catch (Exception e) {
-                log.error("Error deleting non-existent users: {}", e.getMessage(), e);
-                throw new BusinessException("DELETE_ERROR", "Failed to delete non-existent users: " + e.getMessage());
+            if (!usersToDelete.isEmpty()) {
+                userRepository.deleteAll(usersToDelete);
+                log.info("Deleted {} users and their permissions in batch", usersToDelete.size());
             }
+        } catch (Exception e) {
+            log.error("Error deleting non-existent users: {}", e.getMessage(), e);
+            throw new BusinessException("DELETE_ERROR", "Failed to delete non-existent users: " + e.getMessage());
         }
-        log.info("Bulk user upsert completed successfully");
     }
 
     private Optional<String> extractUsernameFromEmail(String email) {
@@ -150,6 +182,7 @@ public class UserService {
      * Update user permissions and location permissions.
      */
     @Transactional
+    @CacheEvict(value = {"users", "permissions"}, allEntries = true)
     public void updateUsers(UserUpdateRequest request) {
         log.info("updateUsers called with data: {}", request.getData());
         if (request.getData() == null || request.getData().isEmpty()) {
@@ -157,103 +190,130 @@ public class UserService {
             throw new BusinessException("INVALID_REQUEST", "Request data cannot be empty");
         }
 
-        // Get all usernames first
-        Set<String> usernames = request.getData().stream()
-            .map(UserUpdateRequest.UserData::getUsername)
-            .collect(Collectors.toSet());
+        // Extract and validate all usernames first
+        Map<String, UserUpdateRequest.UserData> validUserData = extractValidUserData(request.getData());
+        if (validUserData.isEmpty()) {
+            log.warn("No valid user data found");
+            return;
+        }
 
-        // Get all users in one query
-        Map<String, User> existingUsers = userRepository.findAllById(usernames)
+        // Pre-fetch all required data
+        Map<String, User> existingUsers = userRepository.findAllById(validUserData.keySet())
             .stream()
             .collect(Collectors.toMap(User::getUsername, user -> user));
 
-        // Process updates
-        for (UserUpdateRequest.UserData userData : request.getData()) {
-            log.info("Processing user: {}", userData.getUsername());
+        // Process updates in batches
+        List<User> usersToUpdate = new ArrayList<>();
+        for (Map.Entry<String, UserUpdateRequest.UserData> entry : validUserData.entrySet()) {
+            String username = entry.getKey();
+            UserUpdateRequest.UserData userData = entry.getValue();
+            
+            log.info("Processing user: {}", username);
             validateUserData(userData);
 
-            User user = existingUsers.get(userData.getUsername());
+            User user = existingUsers.get(username);
             if (user == null) {
-                throw new BusinessException("USER_NOT_FOUND", "User " + userData.getUsername() + " not found");
+                throw new BusinessException("USER_NOT_FOUND", "User " + username + " not found");
             }
 
-            // Update user permissions
-            user.setIsAllowed(userData.isAllowed());
+            updateUserWithData(user, userData);
+            usersToUpdate.add(user);
+        }
 
-            if (!userData.isAllowed()) {
-                // Format 1: Disable user
-                user.setAgentPermission("");
-                user.setFieldPermission("");
-                user.setApprovedAt(null);
+        // Save all updates in one batch
+        if (!usersToUpdate.isEmpty()) {
+            userRepository.saveAll(usersToUpdate);
+            log.info("Updated {} users in batch", usersToUpdate.size());
+        }
+    }
 
-                // Clear location permission
-                LocationPermission locationPermission = user.getLocationPermission();
-                if (locationPermission != null) {
-                    locationPermission.setNation(null);
+    private Map<String, UserUpdateRequest.UserData> extractValidUserData(List<UserUpdateRequest.UserData> userDataList) {
+        Map<String, UserUpdateRequest.UserData> validData = new HashMap<>();
+        
+        for (UserUpdateRequest.UserData userData : userDataList) {
+            if (userData.getUsername() == null || userData.getUsername().trim().isEmpty()) {
+                log.warn("Skipping user with null or empty username");
+                continue;
+            }
+            validData.put(userData.getUsername(), userData);
+        }
+        
+        return validData;
+    }
+
+    private void updateUserWithData(User user, UserUpdateRequest.UserData userData) {
+        user.setIsAllowed(userData.isAllowed());
+
+        if (!userData.isAllowed()) {
+            // Format 1: Disable user
+            user.setAgentPermission("");
+            user.setFieldPermission("");
+            user.setApprovedAt(null);
+
+            // Clear location permission
+            LocationPermission locationPermission = user.getLocationPermission();
+            if (locationPermission != null) {
+                locationPermission.setNation(null);
+                locationPermission.setArea(null);
+                locationPermission.setProvince(null);
+                locationPermission.setDistrict(null);
+                locationPermission.setMainStation(null);
+                locationPermission.setStation(null);
+            }
+        } else {
+            // Format 2: Enable user with permissions
+            user.setAgentPermission(String.join(",", userData.getAgent()));
+            user.setFieldPermission(String.join(",", userData.getField()));
+            user.setApprovedAt(LocalDateTime.now());
+
+            // Update location permission
+            LocationPermission locationPermission = user.getLocationPermission();
+            if (locationPermission == null) {
+                locationPermission = new LocationPermission();
+                locationPermission.setUsername(user.getUsername());
+                locationPermission.setUser(user);
+                user.setLocationPermission(locationPermission);
+            }
+
+            // Set the specific location field based on level
+            String level = userData.getLocationPermission().getLevel();
+            String value = userData.getLocationPermission().getValue();
+            
+            switch (level.toLowerCase()) {
+                case "nation":
+                    locationPermission.setNation(value);
                     locationPermission.setArea(null);
                     locationPermission.setProvince(null);
                     locationPermission.setDistrict(null);
                     locationPermission.setMainStation(null);
                     locationPermission.setStation(null);
-                }
-            } else {
-                // Format 2: Enable user with permissions
-                user.setAgentPermission(String.join(",", userData.getAgent()));
-                user.setFieldPermission(String.join(",", userData.getField()));
-                user.setApprovedAt(LocalDateTime.now());
-
-                // Update location permission
-                LocationPermission locationPermission = user.getLocationPermission();
-                if (locationPermission == null) {
-                    locationPermission = new LocationPermission();
-                    locationPermission.setUsername(user.getUsername());
-                    locationPermission.setUser(user);
-                    user.setLocationPermission(locationPermission);
-                }
-
-                // Set the specific location field based on level
-                String level = userData.getLocationPermission().getLevel();
-                String value = userData.getLocationPermission().getValue();
-                
-                switch (level.toLowerCase()) {
-                    case "nation":
-                        locationPermission.setNation(value);
-                        locationPermission.setArea(null);
-                        locationPermission.setProvince(null);
-                        locationPermission.setDistrict(null);
-                        locationPermission.setMainStation(null);
-                        locationPermission.setStation(null);
-                        break;
-                    case "area":
-                        locationPermission.setArea(value);
-                        locationPermission.setProvince(null);
-                        locationPermission.setDistrict(null);
-                        locationPermission.setMainStation(null);
-                        locationPermission.setStation(null);
-                        break;
-                    case "province":
-                        locationPermission.setProvince(value);
-                        locationPermission.setDistrict(null);
-                        locationPermission.setMainStation(null);
-                        locationPermission.setStation(null);
-                        break;
-                    case "district":
-                        locationPermission.setDistrict(value);
-                        locationPermission.setMainStation(null);
-                        locationPermission.setStation(null);
-                        break;
-                    case "main_station":
-                        locationPermission.setMainStation(value);
-                        locationPermission.setStation(null);
-                        break;
-                    case "station":
-                        locationPermission.setStation(value);
-                        break;
-                }
+                    break;
+                case "area":
+                    locationPermission.setArea(value);
+                    locationPermission.setProvince(null);
+                    locationPermission.setDistrict(null);
+                    locationPermission.setMainStation(null);
+                    locationPermission.setStation(null);
+                    break;
+                case "province":
+                    locationPermission.setProvince(value);
+                    locationPermission.setDistrict(null);
+                    locationPermission.setMainStation(null);
+                    locationPermission.setStation(null);
+                    break;
+                case "district":
+                    locationPermission.setDistrict(value);
+                    locationPermission.setMainStation(null);
+                    locationPermission.setStation(null);
+                    break;
+                case "main_station":
+                    locationPermission.setMainStation(value);
+                    locationPermission.setStation(null);
+                    break;
+                case "station":
+                    locationPermission.setStation(value);
+                    break;
             }
-
-            userRepository.save(user);
-            log.info("Updated user and location permission: {}", user);
         }
     }
 
