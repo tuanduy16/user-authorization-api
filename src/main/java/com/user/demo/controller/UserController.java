@@ -23,20 +23,10 @@ public class UserController {
     private UserService userService;
 
     @PostMapping("/bulk")
-    public ResponseEntity<?> upsertUsers(@RequestBody UserBulkRequest request) {
-        // Đoạn này try catch có vẻ không cần, có global exception handler rồi mà
-        try {
-            log.info("Received bulk request: {}", request);
-            userService.upsertUsers(request);
-            return ResponseEntity.ok("Users processed successfully");
-        } catch (BusinessException e) {
-            log.error("Business error in bulk request: {}", e.getMessage());
-            return ResponseEntity.badRequest().body(e.getMessage());
-        } catch (Exception e) {
-            log.error("Unexpected error in bulk request: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body("An unexpected error occurred: " + e.getMessage());
-        }
+    public ResponseEntity<?> insertUsers(@RequestBody UserBulkRequest request) {
+        log.info("Received bulk request: {}", request);
+        userService.insertUsers(request);
+        return ResponseEntity.ok("Users processed successfully");
     }
 
     @PostMapping("/update")
