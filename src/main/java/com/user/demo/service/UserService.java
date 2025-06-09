@@ -69,7 +69,7 @@ public class UserService {
      */
     @Transactional
     @CacheEvict(value = {"users", "permissions"}, allEntries = true)
-    public void upsertUsers(UserBulkRequest request) {
+    public void upsertUsers(UserBulkRequest request) { // Tên method sai chính tả nhỉ
         log.info("Starting bulk user upsert with request: {}", request);
         
         // Extract and validate all usernames first
@@ -124,7 +124,8 @@ public class UserService {
         for (Map.Entry<String, UserRequest> entry : validRequests.entrySet()) {
             String username = entry.getKey();
             UserRequest userReq = entry.getValue();
-            
+
+            // Đoạn logic này thì try catch làm gì nhỉ
             try {
                 // Em thử tìm hiểu model mapper để khỏi phải set một số thông tin
                 User user = new User();
