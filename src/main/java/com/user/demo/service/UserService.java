@@ -106,7 +106,7 @@ public class UserService {
             }
             
             Optional<String> usernameOpt = extractUsernameFromEmail(userReq.getEmail());
-            if (usernameOpt.isEmpty()) {
+            if (usernameOpt.isEmpty()) { // Java 8 không có phương thức này
                 log.warn("Skipping user with invalid email: {}", userReq.getEmail());
                 continue;
             }
@@ -126,6 +126,7 @@ public class UserService {
             UserRequest userReq = entry.getValue();
             
             try {
+                // Em thử tìm hiểu model mapper để khỏi phải set một số thông tin
                 User user = new User();
                 user.setUsername(username);
                 user.setEmail(userReq.getEmail());
@@ -209,7 +210,7 @@ public class UserService {
             UserUpdateRequest.UserData userData = entry.getValue();
             
             log.info("Processing user: {}", username);
-            validateUserData(userData);
+            validateUserData(userData); // Đoạn này vẫn truy vấn database này. Cần làm sao đấy để không phải truy vấn DB trong vòng for
 
             User user = existingUsers.get(username);
             if (user == null) {
@@ -278,6 +279,9 @@ public class UserService {
             // Set the specific location field based on level
             String level = userData.getLocationPermission().getLevel();
             String value = userData.getLocationPermission().getValue();
+
+            // Nên thêm 1 đoạn set null tất cả ở đây
+            // Sau đó chỉ cần sửa location level tương ứng
             
             switch (level.toLowerCase()) {
                 case "nation":
