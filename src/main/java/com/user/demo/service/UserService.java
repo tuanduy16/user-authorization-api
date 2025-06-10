@@ -4,11 +4,19 @@ package com.user.demo.service;
  * Service for user management, including bulk operations, permission updates, and validation.
  */
 import com.user.demo.dto.UserBulkRequest;
+import com.user.demo.model.Agent;
+import com.user.demo.model.Field;
 import com.user.demo.dto.UserRequest;
 import com.user.demo.dto.UserUpdateRequest;
 import com.user.demo.exception.BusinessException;
 import com.user.demo.model.User;
 import com.user.demo.model.LocationPermission;
+import com.user.demo.model.Nation;
+import com.user.demo.model.Area;
+import com.user.demo.model.Province;
+import com.user.demo.model.District;
+import com.user.demo.model.MainStation;
+import com.user.demo.model.Station;
 import com.user.demo.repository.UserRepository;
 import com.user.demo.repository.LocationPermissionRepository;
 import com.user.demo.repository.AgentRepository;
@@ -23,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -69,8 +78,8 @@ public class UserService {
      */
     @Transactional
     @CacheEvict(value = {"users", "permissions"}, allEntries = true)
-    public void upsertUsers(UserBulkRequest request) { // Tên method sai chính tả nhỉ
-        log.info("Starting bulk user upsert with request: {}", request);
+    public void insertUsers(UserBulkRequest request) { 
+        log.info("Starting bulk user insert with request: {}", request);
         
         // Extract and validate all usernames first
         Map<String, UserRequest> validUserRequests = extractValidUserRequests(request.getData());
@@ -93,7 +102,7 @@ public class UserService {
             handleUserDeletions(validUserRequests.keySet());
         }
         
-        log.info("Bulk user upsert completed successfully");
+        log.info("Bulk user insert completed successfully");
     }
 
     private Map<String, UserRequest> extractValidUserRequests(List<UserRequest> requests) {
@@ -106,7 +115,7 @@ public class UserService {
             }
             
             Optional<String> usernameOpt = extractUsernameFromEmail(userReq.getEmail());
-            if (usernameOpt.isEmpty()) { // Java 8 không có phương thức này
+            if (!usernameOpt.isPresent()) {
                 log.warn("Skipping user with invalid email: {}", userReq.getEmail());
                 continue;
             }
@@ -125,33 +134,26 @@ public class UserService {
             String username = entry.getKey();
             UserRequest userReq = entry.getValue();
 
-            // Đoạn logic này thì try catch làm gì nhỉ
-            try {
-                // Em thử tìm hiểu model mapper để khỏi phải set một số thông tin
-                User user = new User();
-                user.setUsername(username);
-                user.setEmail(userReq.getEmail());
-                user.setEmployeeId(userReq.getEmployeeId());
-                user.setFullname(userReq.getFullname());
-                user.setPhoneNumber(userReq.getPhoneNumber());
-                user.setBirthYear(userReq.getBirthYear());
-                user.setPosition(userReq.getPosition());
-                user.setDepartment(userReq.getDepartment());
-                user.setIsAllowed(false);
-                user.setAgentPermission("");
-                user.setFieldPermission("");
+            User user = new User();
+            user.setUsername(username);
+            user.setEmail(userReq.getEmail());
+            user.setEmployeeId(userReq.getEmployeeId());
+            user.setFullname(userReq.getFullname());
+            user.setPhoneNumber(userReq.getPhoneNumber());
+            user.setBirthYear(userReq.getBirthYear());
+            user.setPosition(userReq.getPosition());
+            user.setDepartment(userReq.getDepartment());
+            user.setIsAllowed(false);
+            user.setAgentPermission("");
+            user.setFieldPermission("");
 
-                // Create location permission
-                LocationPermission locationPermission = new LocationPermission();
-                locationPermission.setUsername(username);
-                locationPermission.setUser(user);
-                user.setLocationPermission(locationPermission);
+            // Create location permission
+            LocationPermission locationPermission = new LocationPermission();
+            locationPermission.setUsername(username);
+            locationPermission.setUser(user);
+            user.setLocationPermission(locationPermission);
 
-                users.add(user);
-            } catch (Exception e) {
-                log.error("Error creating user {}: {}", username, e.getMessage(), e);
-                throw new BusinessException("PROCESSING_ERROR", "Error creating user " + username + ": " + e.getMessage());
-            }
+            users.add(user);
         }
         
         return users;
@@ -199,25 +201,110 @@ public class UserService {
             return;
         }
 
-        // Pre-fetch all required data
+        // Pre-fetch all users
         Map<String, User> existingUsers = userRepository.findAllById(validUserData.keySet())
             .stream()
             .collect(Collectors.toMap(User::getUsername, user -> user));
 
-        // Process updates in batches
+        // Validate all users exist
+        for (String username : validUserData.keySet()) {
+            if (!existingUsers.containsKey(username)) {
+                throw new BusinessException("USER_NOT_FOUND", "User " + username + " not found");
+            }
+        }
+
+        // Collect all validation data
+        Set<String> agentCodes = new HashSet<>();
+        Set<String> fieldCodes = new HashSet<>();
+        Map<String, Set<String>> locationValuesByLevel = new HashMap<>();
+
+        for (UserUpdateRequest.UserData userData : validUserData.values()) {
+            if (userData.isAllowed()) {
+                if (userData.getAgent() != null) {
+                    agentCodes.addAll(userData.getAgent());
+                }
+                if (userData.getField() != null) {
+                    fieldCodes.addAll(userData.getField());
+                }
+                if (userData.getLocationPermission() != null) {
+                    String level = userData.getLocationPermission().getLevel();
+                    String value = userData.getLocationPermission().getValue();
+                    locationValuesByLevel.computeIfAbsent(level, k -> new HashSet<>()).add(value);
+                }
+            }
+        }
+
+        // Batch validate agent codes
+        if (!agentCodes.isEmpty()) {
+            List<Long> agentIds = agentCodes.stream()
+                .map(Long::parseLong)
+                .collect(Collectors.toList());
+            Set<Long> validAgentIds = agentRepository.findAllById(agentIds).stream()
+                .map(Agent::getId)
+                .collect(Collectors.toSet());
+            
+            for (String code : agentCodes) {
+                if (!validAgentIds.contains(Long.parseLong(code))) {
+                    throw new BusinessException("INVALID_AGENT", "Agent code " + code + " does not exist");
+                }
+            }
+        }
+
+        // Batch validate field codes
+        if (!fieldCodes.isEmpty()) {
+            List<Long> fieldIds = fieldCodes.stream()
+                .map(Long::parseLong)
+                .collect(Collectors.toList());
+            Set<Long> validFieldIds = fieldRepository.findAllById(fieldIds).stream()
+                .map(Field::getId)
+                .collect(Collectors.toSet());
+            
+            for (String code : fieldCodes) {
+                if (!validFieldIds.contains(Long.parseLong(code))) {
+                    throw new BusinessException("INVALID_FIELD", "Field code " + code + " does not exist");
+                }
+            }
+        }
+
+        // Batch validate location values
+        for (Map.Entry<String, Set<String>> entry : locationValuesByLevel.entrySet()) {
+            String level = entry.getKey();
+            Set<String> values = entry.getValue();
+            
+            if (!isValidLocationLevel(level)) {
+                throw new BusinessException("INVALID_LEVEL", "Invalid location level: " + level);
+            }
+
+            switch (level.toLowerCase()) {
+                case "nation":
+                    validateLocationValues(nationRepository, values, "Nation");
+                    break;
+                case "area":
+                    validateLocationValues(areaRepository, values, "Area");
+                    break;
+                case "province":
+                    validateLocationValues(provinceRepository, values, "Province");
+                    break;
+                case "district":
+                    validateLocationValues(districtRepository, values, "District");
+                    break;
+                case "main_station":
+                    validateLocationValues(mainStationRepository, values, "Main station");
+                    break;
+                case "station":
+                    validateLocationValues(stationRepository, values, "Station");
+                    break;
+            }
+        }
+
+        // Process updates in memory
         List<User> usersToUpdate = new ArrayList<>();
         for (Map.Entry<String, UserUpdateRequest.UserData> entry : validUserData.entrySet()) {
             String username = entry.getKey();
             UserUpdateRequest.UserData userData = entry.getValue();
             
             log.info("Processing user: {}", username);
-            validateUserData(userData); // Đoạn này vẫn truy vấn database này. Cần làm sao đấy để không phải truy vấn DB trong vòng for
-
             User user = existingUsers.get(username);
-            if (user == null) {
-                throw new BusinessException("USER_NOT_FOUND", "User " + username + " not found");
-            }
-
             updateUserWithData(user, userData);
             usersToUpdate.add(user);
         }
@@ -226,6 +313,28 @@ public class UserService {
         if (!usersToUpdate.isEmpty()) {
             userRepository.saveAll(usersToUpdate);
             log.info("Updated {} users in batch", usersToUpdate.size());
+        }
+    }
+
+    private <T> void validateLocationValues(JpaRepository<T, String> repository, Set<String> values, String entityName) {
+        List<T> existingEntities = repository.findAllById(values);
+        Set<String> existingIds = existingEntities.stream()
+            .map(entity -> {
+                if (entity instanceof Nation) return ((Nation) entity).getCode();
+                if (entity instanceof Area) return ((Area) entity).getCode();
+                if (entity instanceof Province) return ((Province) entity).getCode();
+                if (entity instanceof District) return ((District) entity).getCode();
+                if (entity instanceof MainStation) return ((MainStation) entity).getCode();
+                if (entity instanceof Station) return ((Station) entity).getCode();
+                return entity.toString();
+            })
+            .collect(Collectors.toSet());
+        
+        for (String value : values) {
+            if (!existingIds.contains(value)) {
+                throw new BusinessException("INVALID_" + entityName.toUpperCase(), 
+                    entityName + " code " + value + " does not exist");
+            }
         }
     }
 
@@ -277,130 +386,36 @@ public class UserService {
                 user.setLocationPermission(locationPermission);
             }
 
-            // Set the specific location field based on level
+            // Set all location fields to null first
+            locationPermission.setNation(null);
+            locationPermission.setArea(null);
+            locationPermission.setProvince(null);
+            locationPermission.setDistrict(null);
+            locationPermission.setMainStation(null);
+            locationPermission.setStation(null);
+
+            // Set only the specific location level
             String level = userData.getLocationPermission().getLevel();
             String value = userData.getLocationPermission().getValue();
-
-            // Nên thêm 1 đoạn set null tất cả ở đây
-            // Sau đó chỉ cần sửa location level tương ứng
             
             switch (level.toLowerCase()) {
                 case "nation":
                     locationPermission.setNation(value);
-                    locationPermission.setArea(null);
-                    locationPermission.setProvince(null);
-                    locationPermission.setDistrict(null);
-                    locationPermission.setMainStation(null);
-                    locationPermission.setStation(null);
                     break;
                 case "area":
                     locationPermission.setArea(value);
-                    locationPermission.setProvince(null);
-                    locationPermission.setDistrict(null);
-                    locationPermission.setMainStation(null);
-                    locationPermission.setStation(null);
                     break;
                 case "province":
                     locationPermission.setProvince(value);
-                    locationPermission.setDistrict(null);
-                    locationPermission.setMainStation(null);
-                    locationPermission.setStation(null);
                     break;
                 case "district":
                     locationPermission.setDistrict(value);
-                    locationPermission.setMainStation(null);
-                    locationPermission.setStation(null);
                     break;
                 case "main_station":
                     locationPermission.setMainStation(value);
-                    locationPermission.setStation(null);
                     break;
                 case "station":
                     locationPermission.setStation(value);
-                    break;
-            }
-        }
-    }
-
-    private void validateUserData(UserUpdateRequest.UserData userData) {
-        if (userData.getUsername() == null || userData.getUsername().trim().isEmpty()) {
-            throw new BusinessException("INVALID_USERNAME", "Username cannot be empty");
-        }
-
-        if (userData.isAllowed()) {
-            // Only validate these fields if user is being enabled
-            if (userData.getAgent() == null || userData.getAgent().isEmpty()) {
-                throw new BusinessException("INVALID_AGENT", "Agent list cannot be empty");
-            }
-            if (userData.getField() == null || userData.getField().isEmpty()) {
-                throw new BusinessException("INVALID_FIELD", "Field list cannot be empty");
-            }
-
-            // Validate agent codes
-            for (String agentCode : userData.getAgent()) {
-                try {
-                    Long agentId = Long.parseLong(agentCode);
-                    if (!agentRepository.existsById(agentId)) {
-                        throw new BusinessException("INVALID_AGENT", "Agent code " + agentCode + " does not exist");
-                    }
-                } catch (NumberFormatException e) {
-                    throw new BusinessException("INVALID_AGENT", "Agent code " + agentCode + " is not a valid number");
-                }
-            }
-
-            // Validate field codes
-            for (String fieldCode : userData.getField()) {
-                try {
-                    Long fieldId = Long.parseLong(fieldCode);
-                    if (!fieldRepository.existsById(fieldId)) {
-                        throw new BusinessException("INVALID_FIELD", "Field code " + fieldCode + " does not exist");
-                    }
-                } catch (NumberFormatException e) {
-                    throw new BusinessException("INVALID_FIELD", "Field code " + fieldCode + " is not a valid number");
-                }
-            }
-
-            if (userData.getLocationPermission() == null) {
-                throw new BusinessException("INVALID_LOCATION", "Location permission cannot be null");
-            }
-            if (!isValidLocationLevel(userData.getLocationPermission().getLevel())) {
-                throw new BusinessException("INVALID_LEVEL", "Invalid location level: " + userData.getLocationPermission().getLevel());
-            }
-
-            // Validate if location value exists in the corresponding table
-            String level = userData.getLocationPermission().getLevel();
-            String value = userData.getLocationPermission().getValue();
-            
-            switch (level.toLowerCase()) {
-                case "nation":
-                    if (!nationRepository.existsById(value)) {
-                        throw new BusinessException("INVALID_NATION", "Nation code " + value + " does not exist");
-                    }
-                    break;
-                case "area":
-                    if (!areaRepository.existsById(value)) {
-                        throw new BusinessException("INVALID_AREA", "Area code " + value + " does not exist");
-                    }
-                    break;
-                case "province":
-                    if (!provinceRepository.existsById(value)) {
-                        throw new BusinessException("INVALID_PROVINCE", "Province code " + value + " does not exist");
-                    }
-                    break;
-                case "district":
-                    if (!districtRepository.existsById(value)) {
-                        throw new BusinessException("INVALID_DISTRICT", "District code " + value + " does not exist");
-                    }
-                    break;
-                case "main_station":
-                    if (!mainStationRepository.existsById(value)) {
-                        throw new BusinessException("INVALID_MAIN_STATION", "Main station code " + value + " does not exist");
-                    }
-                    break;
-                case "station":
-                    if (!stationRepository.existsById(value)) {
-                        throw new BusinessException("INVALID_STATION", "Station code " + value + " does not exist");
-                    }
                     break;
             }
         }
