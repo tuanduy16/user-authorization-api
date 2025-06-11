@@ -8,6 +8,8 @@ API dựa trên Spring Boot để quản lý nhân viên/người dùng với c�
 - Quản lý quyền (dựa trên agent và field)
 - Kiểm soát truy cập dựa trên vị trí
 - Đồng bộ hóa dữ liệu trạm
+- Tìm kiếm và lọc người dùng
+- Quản lý trạm
 
 ### Công Nghệ Sử Dụng
 - Java 8
@@ -39,8 +41,23 @@ src/main/java/com/  user/demo/
    ```
 
 ### Các Endpoint API
+
+#### User Endpoints
+- `GET /api/users` - Lấy danh sách người dùng với các bộ lọc:
+  - `is_allowed` (boolean): Lọc theo trạng thái cho phép
+  - `username` (string): Tìm kiếm theo tên người dùng (không phân biệt hoa thường)
+  - `department` (string): Lọc theo phòng ban (không phân biệt hoa thường)
+  - `page` (int, mặc định: 0): Số trang
+  - `size` (int, mặc định: 10, tối đa: 100): Số lượng kết quả mỗi trang
+
 - `POST /api/users/bulk` - Thao tác hàng loạt với người dùng
 - `POST /api/users/update` - Cập nhật quyền người dùng
+
+#### Station Endpoints
+- `GET /api/stations` - Lấy danh sách trạm:
+  - Không có tham số: Trả về tất cả trạm
+  - `search` (string): Tìm kiếm trạm theo mã trạm
+
 - `POST /api/stations/sync` - Đồng bộ hóa dữ liệu trạm
 
 ### Kiểm Thử
