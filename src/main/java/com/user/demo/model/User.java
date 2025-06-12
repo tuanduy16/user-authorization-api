@@ -3,7 +3,6 @@ package com.user.demo.model;
 import javax.persistence.*;
 import java.time.LocalDateTime;
 import lombok.Data;
-import com.fasterxml.jackson.annotation.JsonProperty;
 
 @Entity
 @Table(name = "users")
@@ -23,6 +22,7 @@ public class User {
     private String agentPermission;
     private String fieldPermission;
     private LocalDateTime approvedAt; // Approval timestamp
-    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
-    private LocationPermission locationPermission;
+    private String locationPermissionLevel;
+    private String locationPermissionValue;
+    private String stationDefault;
 } 
