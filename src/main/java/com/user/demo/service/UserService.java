@@ -3,6 +3,7 @@ package com.user.demo.service;
 /**
  * Service for user management, including bulk operations, permission updates, and validation.
  */
+import com.user.demo.dto.UserResponseDTO;
 import com.user.demo.dto.UserBulkRequest;
 import com.user.demo.model.Agent;
 import com.user.demo.model.Field;
@@ -31,6 +32,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -78,14 +82,19 @@ public class UserService {
      */
     @Transactional
     @CacheEvict(value = {"users", "permissions"}, allEntries = true)
-    public void insertUsers(UserBulkRequest request) { 
+    public int insertUsers(UserBulkRequest request) { 
         log.info("Starting bulk user insert with request: {}", request);
+        
+        // Validate request
+        if (request.getData() == null || request.getData().isEmpty()) {
+            throw new BusinessException("INVALID_REQUEST", "Data list cannot be empty");
+        }
         
         // Extract and validate all usernames first
         Map<String, UserRequest> validUserRequests = extractValidUserRequests(request.getData());
         if (validUserRequests.isEmpty()) {
             log.warn("No valid user requests found");
-            return;
+            return 0;
         }
 
         // Create all users in memory
@@ -103,6 +112,7 @@ public class UserService {
         }
         
         log.info("Bulk user insert completed successfully");
+        return usersToSave.size();
     }
 
     private Map<String, UserRequest> extractValidUserRequests(List<UserRequest> requests) {
@@ -187,8 +197,10 @@ public class UserService {
      */
     @Transactional
     @CacheEvict(value = {"users", "permissions"}, allEntries = true)
-    public void updateUsers(UserUpdateRequest request) {
+    public int updateUsers(UserUpdateRequest request) {
         log.info("updateUsers called with data: {}", request.getData());
+        
+        // Validate request
         if (request.getData() == null || request.getData().isEmpty()) {
             log.warn("Request data is null or empty");
             throw new BusinessException("INVALID_REQUEST", "Request data cannot be empty");
@@ -198,7 +210,7 @@ public class UserService {
         Map<String, UserUpdateRequest.UserData> validUserData = extractValidUserData(request.getData());
         if (validUserData.isEmpty()) {
             log.warn("No valid user data found");
-            return;
+            return 0;
         }
 
         // Pre-fetch all users
@@ -314,6 +326,8 @@ public class UserService {
             userRepository.saveAll(usersToUpdate);
             log.info("Updated {} users in batch", usersToUpdate.size());
         }
+
+        return usersToUpdate.size();
     }
 
     private <T> void validateLocationValues(JpaRepository<T, String> repository, Set<String> values, String entityName) {
@@ -424,5 +438,85 @@ public class UserService {
     private boolean isValidLocationLevel(String level) {
         return level != null && Arrays.asList("nation", "area", "province", "district", "main_station", "station")
             .contains(level.toLowerCase());
+    }
+
+    public Page<UserResponseDTO> getUsers(Boolean isAllowed, String username, String department, Pageable pageable) {
+        log.info("Getting users with filters - is_allowed: {}, username: {}, department: {}", 
+            isAllowed, username, department);
+
+        // Create specification for filtering
+        Specification<User> spec = Specification.where(null);
+
+        // Handle is_allowed filter - must match exactly
+        if (isAllowed != null) {
+            spec = spec.and((root, query, cb) -> {
+                // Use exact boolean comparison
+                return cb.equal(root.get("isAllowed"), isAllowed);
+            });
+            log.debug("Added is_allowed filter: {}", isAllowed);
+        }
+
+        // Handle username filter - case-insensitive partial match
+        if (username != null && !username.trim().isEmpty()) {
+            String usernameLike = "%" + username.trim().toLowerCase() + "%";
+            spec = spec.and((root, query, cb) -> 
+                cb.like(cb.lower(root.get("username")), usernameLike));
+            log.debug("Added username filter: {}", usernameLike);
+        }
+
+        // Handle department filter - case-insensitive exact match
+        if (department != null && !department.trim().isEmpty()) {
+            String departmentValue = department.trim();
+            spec = spec.and((root, query, cb) -> {
+                // Use exact string comparison with case-insensitive
+                return cb.equal(cb.lower(root.get("department")), departmentValue.toLowerCase());
+            });
+            log.debug("Added department filter: {}", departmentValue);
+        }
+
+        // Get users with pagination
+        Page<User> users = userRepository.findAll(spec, pageable);
+        log.info("Found {} users matching the filters", users.getTotalElements());
+
+        // Log sample results for debugging
+        if (users.getTotalElements() > 0) {
+            users.getContent().stream()
+                .limit(3)
+                .forEach(user -> {
+                    log.debug("Sample user - username: {}, is_allowed: {}, department: {}", 
+                        user.getUsername(), user.getIsAllowed(), user.getDepartment());
+                });
+        }
+
+        // Convert to DTOs
+        return users.map(user -> {
+            UserResponseDTO dto = new UserResponseDTO();
+            dto.setUsername(user.getUsername());
+            dto.setEmail(user.getEmail());
+            dto.setEmployeeId(user.getEmployeeId());
+            dto.setFullname(user.getFullname());
+            dto.setDepartment(user.getDepartment());
+            dto.setPosition(user.getPosition());
+            dto.setPhoneNumber(user.getPhoneNumber());
+            dto.setBirthYear(user.getBirthYear());
+            dto.setIsAllowed(user.getIsAllowed());
+            dto.setAgentPermission(user.getAgentPermission());
+            dto.setFieldPermission(user.getFieldPermission());
+
+            // Set location permission if exists
+            if (user.getLocationPermission() != null) {
+                UserResponseDTO.LocationPermissionDTO locationDto = new UserResponseDTO.LocationPermissionDTO();
+                locationDto.setNation(user.getLocationPermission().getNation());
+                locationDto.setArea(user.getLocationPermission().getArea());
+                locationDto.setProvince(user.getLocationPermission().getProvince());
+                locationDto.setDistrict(user.getLocationPermission().getDistrict());
+                locationDto.setMainStation(user.getLocationPermission().getMainStation());
+                locationDto.setStation(user.getLocationPermission().getStation());
+                locationDto.setStationDefault(user.getLocationPermission().getStationDefault());
+                dto.setLocationPermission(locationDto);
+            }
+
+            return dto;
+        });
     }
 } 

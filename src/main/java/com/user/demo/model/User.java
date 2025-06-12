@@ -3,6 +3,7 @@ package com.user.demo.model;
 import javax.persistence.*;
 import java.time.LocalDateTime;
 import lombok.Data;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 @Entity
 @Table(name = "users")

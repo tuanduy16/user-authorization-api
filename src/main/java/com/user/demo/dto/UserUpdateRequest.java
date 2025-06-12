@@ -5,6 +5,7 @@ package com.user.demo.dto;
  */
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
+import javax.validation.Valid;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
@@ -12,6 +13,7 @@ import java.util.List;
 
 @Data
 public class UserUpdateRequest {
+    @Valid
     @NotEmpty(message = "Data list cannot be empty")
     private List<UserData> data;
 
@@ -20,16 +22,14 @@ public class UserUpdateRequest {
         @NotBlank(message = "Username is required")
         private String username;
 
+        @NotNull(message = "Is allowed flag is required")
         @JsonProperty("is_allowed")
         private boolean isAllowed;
 
-        @NotEmpty(message = "Agent list cannot be empty")
         private List<String> agent;
-
-        @NotEmpty(message = "Field list cannot be empty")
         private List<String> field;
 
-        @NotNull(message = "Location permission is required")
+        @Valid
         @JsonProperty("location_permission")
         private LocationPermission locationPermission;
     }
