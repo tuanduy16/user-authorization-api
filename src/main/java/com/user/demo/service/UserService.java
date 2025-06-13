@@ -70,9 +70,9 @@ public class UserService {
     @Autowired
     private StationRepository stationRepository;
 
-    private static final Set<String> validLocationLevels = Set.of(
+    private static final Set<String> validLocationLevels = new HashSet<>(Arrays.asList(
         "nation", "area", "province", "district", "main_station", "station"
-    );
+    ));
 
     /**
      * Bulk create or update users, and optionally delete non-existent users.
@@ -167,10 +167,14 @@ public class UserService {
             return 0;
         }
 
+        log.info("Found {} valid user records to process", validUserData.size());
+
         // Pre-fetch all users
         Map<String, User> existingUsers = userRepository.findAllById(validUserData.keySet())
             .stream()
             .collect(Collectors.toMap(User::getUsername, user -> user));
+
+        log.info("Found {} existing users", existingUsers.size());
 
         // Validate all users exist
         for (String username : validUserData.keySet()) {
@@ -184,23 +188,40 @@ public class UserService {
         Set<String> fieldCodes = new HashSet<>();
         Map<String, Set<String>> locationValuesByLevel = new HashMap<>();
 
+        // First pass: collect all values for validation
         for (UserUpdateRequest.UserData userData : validUserData.values()) {
             if (userData.isAllowed()) {
+                // Collect agent codes
                 if (userData.getAgent() != null) {
                     agentCodes.addAll(userData.getAgent());
                 }
+                
+                // Collect field codes
                 if (userData.getField() != null) {
                     fieldCodes.addAll(userData.getField());
                 }
+                
+                // Collect location values
                 if (userData.getLocationPermission() != null) {
-                    String level = userData.getLocationPermission().getLevel();
+                    String level = userData.getLocationPermission().getLevel().toLowerCase();
                     String value = userData.getLocationPermission().getValue();
-                    locationValuesByLevel.computeIfAbsent(level, k -> new HashSet<>()).add(value);
+                    
+                    if (value != null && !value.trim().isEmpty()) {
+                        Set<String> values = Arrays.stream(value.split(","))
+                            .map(String::trim)
+                            .filter(s -> !s.isEmpty())
+                            .collect(Collectors.toSet());
+                        
+                        locationValuesByLevel.computeIfAbsent(level, k -> new HashSet<>()).addAll(values);
+                    }
                 }
             }
         }
 
-        // Validate agent codes
+        log.info("Collected {} agent codes, {} field codes, and {} location levels for validation", 
+            agentCodes.size(), fieldCodes.size(), locationValuesByLevel.size());
+
+        // Validate agent codes in batch
         if (!agentCodes.isEmpty()) {
             List<Long> agentIds = agentCodes.stream()
                 .map(Long::parseLong)
@@ -209,14 +230,18 @@ public class UserService {
                 .map(Agent::getId)
                 .collect(Collectors.toSet());
             
-            for (String code : agentCodes) {
-                if (!validAgentIds.contains(Long.parseLong(code))) {
-                    throw new BusinessException("INVALID_AGENT", "Agent code " + code + " does not exist");
-                }
+            Set<String> invalidAgentCodes = agentCodes.stream()
+                .filter(code -> !validAgentIds.contains(Long.parseLong(code)))
+                .collect(Collectors.toSet());
+            
+            if (!invalidAgentCodes.isEmpty()) {
+                throw new BusinessException("INVALID_AGENT", 
+                    "Agent codes do not exist: " + String.join(", ", invalidAgentCodes));
             }
+            log.info("Successfully validated {} agent codes", agentCodes.size());
         }
 
-        // Validate field codes
+        // Validate field codes in batch
         if (!fieldCodes.isEmpty()) {
             List<Long> fieldIds = fieldCodes.stream()
                 .map(Long::parseLong)
@@ -225,15 +250,55 @@ public class UserService {
                 .map(Field::getId)
                 .collect(Collectors.toSet());
             
-            for (String code : fieldCodes) {
-                if (!validFieldIds.contains(Long.parseLong(code))) {
-                    throw new BusinessException("INVALID_FIELD", "Field code " + code + " does not exist");
-                }
+            Set<String> invalidFieldCodes = fieldCodes.stream()
+                .filter(code -> !validFieldIds.contains(Long.parseLong(code)))
+                .collect(Collectors.toSet());
+            
+            if (!invalidFieldCodes.isEmpty()) {
+                throw new BusinessException("INVALID_FIELD", 
+                    "Field codes do not exist: " + String.join(", ", invalidFieldCodes));
             }
+            log.info("Successfully validated {} field codes", fieldCodes.size());
         }
 
         // Validate location permissions
-        validateLocationPermissions(validUserData, locationValuesByLevel);
+        for (Map.Entry<String, Set<String>> entry : locationValuesByLevel.entrySet()) {
+            String level = entry.getKey();
+            Set<String> values = entry.getValue();
+            
+            log.info("Validating {} values for level: {}", values.size(), level);
+            
+            // Validate level
+            if (!validLocationLevels.contains(level)) {
+                throw new BusinessException("INVALID_LEVEL", 
+                    "Invalid location level: " + level + ". Must be one of: " + validLocationLevels);
+            }
+            
+            // Validate values exist in database
+            switch (level) {
+                case "nation":
+                    validateLocationValues(nationRepository, values, "Nation");
+                    break;
+                case "area":
+                    validateLocationValues(areaRepository, values, "Area");
+                    break;
+                case "province":
+                    validateLocationValues(provinceRepository, values, "Province");
+                    break;
+                case "district":
+                    validateLocationValues(districtRepository, values, "District");
+                    break;
+                case "main_station":
+                    validateLocationValues(mainStationRepository, values, "Main station");
+                    break;
+                case "station":
+                    validateLocationValues(stationRepository, values, "Station");
+                    break;
+                default:
+                    throw new BusinessException("INVALID_LEVEL", 
+                        "Invalid location level: " + level + ". Must be one of: " + validLocationLevels);
+            }
+        }
 
         // Process updates in memory
         List<User> usersToUpdate = new ArrayList<>();
@@ -248,14 +313,41 @@ public class UserService {
             user.setIsAllowed(userData.isAllowed());
             
             if (userData.isAllowed()) {
-                user.setAgentPermission(String.join(",", userData.getAgent()));
-                user.setFieldPermission(String.join(",", userData.getField()));
+                // Set agent permissions
+                if (userData.getAgent() != null && !userData.getAgent().isEmpty()) {
+                    user.setAgentPermission(String.join(",", userData.getAgent()));
+                } else {
+                    user.setAgentPermission("");
+                }
+
+                // Set field permissions
+                if (userData.getField() != null && !userData.getField().isEmpty()) {
+                    user.setFieldPermission(String.join(",", userData.getField()));
+                } else {
+                    user.setFieldPermission("");
+                }
+
                 user.setApprovedAt(LocalDateTime.now());
                 
                 // Update location permission
                 if (userData.getLocationPermission() != null) {
-                    user.setLocationPermissionLevel(userData.getLocationPermission().getLevel());
-                    user.setLocationPermissionValue(userData.getLocationPermission().getValue());
+                    String level = userData.getLocationPermission().getLevel().toLowerCase();
+                    String value = userData.getLocationPermission().getValue();
+                    
+                    if (value != null && !value.trim().isEmpty()) {
+                        user.setLocationPermissionLevel(level);
+                        user.setLocationPermissionValue(value.trim());
+                        log.info("Setting location permission for user {}: level={}, value={}", 
+                            username, level, value.trim());
+                    } else {
+                        user.setLocationPermissionLevel(null);
+                        user.setLocationPermissionValue(null);
+                        log.info("Clearing location permission for user {} due to empty value", username);
+                    }
+                } else {
+                    user.setLocationPermissionLevel(null);
+                    user.setLocationPermissionValue(null);
+                    log.info("Clearing location permission for user {} due to null permission", username);
                 }
             } else {
                 // Clear permissions if user is not allowed
@@ -264,6 +356,7 @@ public class UserService {
                 user.setLocationPermissionLevel(null);
                 user.setLocationPermissionValue(null);
                 user.setApprovedAt(null);
+                log.info("Clearing all permissions for user {} due to not allowed", username);
             }
             
             usersToUpdate.add(user);
@@ -272,71 +365,14 @@ public class UserService {
         // Save all updates in one batch
         if (!usersToUpdate.isEmpty()) {
             userRepository.saveAll(usersToUpdate);
-            log.info("Updated {} users in batch", usersToUpdate.size());
+            log.info("Successfully updated {} users in batch", usersToUpdate.size());
         }
 
         return usersToUpdate.size();
     }
 
-    private void validateLocationPermissions(Map<String, UserUpdateRequest.UserData> userData, 
-            Map<String, Set<String>> locationValuesByLevel) {
-        for (UserUpdateRequest.UserData data : userData.values()) {
-            if (data.isAllowed() && data.getLocationPermission() != null) {
-                String level = data.getLocationPermission().getLevel();
-                String value = data.getLocationPermission().getValue();
-                
-                // Validate level
-                if (!validLocationLevels.contains(level.toLowerCase())) {
-                    throw new BusinessException("INVALID_LEVEL", 
-                        "Invalid location level: " + level + ". Must be one of: " + validLocationLevels);
-                }
-                
-                // Validate value is not empty
-                if (value == null || value.trim().isEmpty()) {
-                    throw new BusinessException("INVALID_VALUE", 
-                        "Location permission value cannot be empty for level: " + level);
-                }
-
-                // Split and validate each value
-                Set<String> values = Arrays.stream(value.split(","))
-                    .map(String::trim)
-                    .filter(s -> !s.isEmpty())
-                    .collect(Collectors.toSet());
-
-                if (values.isEmpty()) {
-                    throw new BusinessException("INVALID_VALUE", 
-                        "Location permission value must contain at least one valid code for level: " + level);
-                }
-
-                // Validate each value exists in database
-                switch (level.toLowerCase()) {
-                    case "nation":
-                        validateLocationValues(nationRepository, values, "Nation");
-                        break;
-                    case "area":
-                        validateLocationValues(areaRepository, values, "Area");
-                        break;
-                    case "province":
-                        validateLocationValues(provinceRepository, values, "Province");
-                        break;
-                    case "district":
-                        validateLocationValues(districtRepository, values, "District");
-                        break;
-                    case "main_station":
-                        validateLocationValues(mainStationRepository, values, "Main station");
-                        break;
-                    case "station":
-                        validateLocationValues(stationRepository, values, "Station");
-                        break;
-                    default:
-                        throw new BusinessException("INVALID_LEVEL", 
-                            "Invalid location level: " + level + ". Must be one of: " + validLocationLevels);
-                }
-            }
-        }
-    }
-
     private <T> void validateLocationValues(JpaRepository<T, String> repository, Set<String> values, String entityName) {
+        // Fetch all values in one batch
         List<T> existingEntities = repository.findAllById(values);
         Set<String> existingIds = existingEntities.stream()
             .map(entity -> {
@@ -350,41 +386,17 @@ public class UserService {
             })
             .collect(Collectors.toSet());
         
-        for (String value : values) {
-            if (!existingIds.contains(value)) {
-                throw new BusinessException("INVALID_" + entityName.toUpperCase(), 
-                    entityName + " code " + value + " does not exist");
-            }
-        }
-    }
-
-    private List<User> createUsersFromRequests(Map<String, UserRequest> validRequests) {
-        List<User> users = new ArrayList<>();
+        // Find all invalid values
+        Set<String> invalidValues = values.stream()
+            .filter(value -> !existingIds.contains(value))
+            .collect(Collectors.toSet());
         
-        for (Map.Entry<String, UserRequest> entry : validRequests.entrySet()) {
-            String username = entry.getKey();
-            UserRequest userReq = entry.getValue();
-
-            User user = new User();
-            user.setUsername(username);
-            user.setEmail(userReq.getEmail());
-            user.setEmployeeId(userReq.getEmployeeId());
-            user.setFullname(userReq.getFullname());
-            user.setPhoneNumber(userReq.getPhoneNumber());
-            user.setBirthYear(userReq.getBirthYear());
-            user.setPosition(userReq.getPosition());
-            user.setDepartment(userReq.getDepartment());
-            user.setIsAllowed(false);
-            user.setAgentPermission("");
-            user.setFieldPermission("");
-            user.setLocationPermissionLevel(null);
-            user.setLocationPermissionValue(null);
-            user.setStationDefault(null);
-
-            users.add(user);
+        if (!invalidValues.isEmpty()) {
+            throw new BusinessException("INVALID_" + entityName.toUpperCase(), 
+                entityName + " codes do not exist: " + String.join(", ", invalidValues));
         }
-        
-        return users;
+
+        log.info("Successfully validated {} {} codes", values.size(), entityName.toLowerCase());
     }
 
     private Map<String, UserRequest> extractValidUserRequests(List<UserRequest> requests) {
@@ -493,12 +505,6 @@ public class UserService {
             log.warn("No valid user data found");
             return;
         }
-
-        // Check for existing users
-        Set<String> existingUsernames = userRepository.findAllById(validRequests.keySet())
-            .stream()
-            .map(User::getUsername)
-            .collect(Collectors.toSet());
 
         // Handle deletions if requested
         if (request.isDeleteNonExistPeople()) {
