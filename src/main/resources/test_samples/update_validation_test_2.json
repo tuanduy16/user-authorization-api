@@ -11,7 +11,7 @@
             "is_allowed": true,
             "agent": ["1"],
             "field": ["1"],
-            "locationPermission": {
+            "location_permission": {
                 "level": "nation",
                 "value": "" 
             }
@@ -21,7 +21,7 @@
             "is_allowed": true,
             "agent": ["1"],
             "field": ["1"],
-            "locationPermission": {
+            "location_permission": {
                 "level": "area",
                 "value": "North"
             }
@@ -31,7 +31,7 @@
             "is_allowed": true,
             "agent": null,  
             "field": ["1"],
-            "locationPermission": {
+            "location_permission": {
                 "level": "province",
                 "value": "Hanoi"
             }

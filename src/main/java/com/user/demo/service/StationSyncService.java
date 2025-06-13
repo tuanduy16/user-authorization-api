@@ -4,9 +4,9 @@ package com.user.demo.service;
  * Service for syncing station data and updating user default stations.
  */
 import com.user.demo.model.Station;
-import com.user.demo.model.LocationPermission;
+import com.user.demo.model.User;
 import com.user.demo.repository.StationRepository;
-import com.user.demo.repository.LocationPermissionRepository;
+import com.user.demo.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,8 +17,9 @@ import java.util.stream.Collectors;
 public class StationSyncService {
     @Autowired
     private StationRepository stationRepository;
+    
     @Autowired
-    private LocationPermissionRepository locationPermissionRepository;
+    private UserRepository userRepository;
 
     /**
      * Sync station data from external source and update user default stations.
@@ -64,28 +65,28 @@ public class StationSyncService {
             stationRepository.saveAll(newStations);
         }
 
-        // Get all location permissions in one query
-        Map<String, LocationPermission> locationPermissions = locationPermissionRepository.findAllById(usernames)
+        // Get all users in one query
+        Map<String, User> users = userRepository.findAllById(usernames)
             .stream()
-            .collect(Collectors.toMap(LocationPermission::getUsername, lp -> lp));
+            .collect(Collectors.toMap(User::getUsername, user -> user));
 
-        // Update location permissions in batch
-        List<LocationPermission> updatedPermissions = new ArrayList<>();
+        // Update users in batch
+        List<User> updatedUsers = new ArrayList<>();
         for (Map<String, Object> record : dataList) {
             String stationCode = (String) record.get("STATION_CODE");
             String email = (String) record.get("EMAIL");
             if (stationCode == null || email == null) continue;
 
             String username = email.split("@")[0];
-            LocationPermission lp = locationPermissions.get(username);
-            if (lp != null) {
-                lp.setStationDefault(stationCode);
-                updatedPermissions.add(lp);
+            User user = users.get(username);
+            if (user != null) {
+                user.setStationDefault(stationCode);
+                updatedUsers.add(user);
             }
         }
 
-        if (!updatedPermissions.isEmpty()) {
-            locationPermissionRepository.saveAll(updatedPermissions);
+        if (!updatedUsers.isEmpty()) {
+            userRepository.saveAll(updatedUsers);
         }
     }
 

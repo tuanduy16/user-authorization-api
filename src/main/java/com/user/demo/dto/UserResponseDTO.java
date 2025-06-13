@@ -30,22 +30,12 @@ public class UserResponseDTO {
     @JsonProperty("field_permission")
     private String fieldPermission;
     
-    @JsonProperty("location_permission")
-    private LocationPermissionDTO locationPermission;
+    @JsonProperty("location_permission_level")
+    private String locationPermissionLevel;
     
-    @Data
-    public static class LocationPermissionDTO {
-        private String nation;
-        private String area;
-        private String province;
-        private String district;
-        
-        @JsonProperty("main_station")
-        private String mainStation;
-        
-        private String station;
-        
-        @JsonProperty("station_default")
-        private String stationDefault;
-    }
+    @JsonProperty("location_permission_value")
+    private String locationPermissionValue;
+    
+    @JsonProperty("station_default")
+    private String stationDefault;
 }
