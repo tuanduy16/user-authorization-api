@@ -5,7 +5,7 @@
             "is_allowed": true,
             "agent": ["999", "1000"],  
             "field": ["1", "2"],
-            "locationPermission": {
+            "location_permission": {
                 "level": "invalid_level",  
                 "value": "Vietnam"
             }
